@@ -1,21 +1,8 @@
 open System.Text.RegularExpressions
 
-type Operator =
-  | Exponent
-  | Multiply
-  | Modulus
-  | Divide
-  | Add
-  | Subtract
+type Operator = | Exponent | Multiply | Modulus | Divide | Add | Subtract
 
-type ExpressionTree =
-  | Expression of
-      left: ExpressionTree *
-      operator: Operator *
-      right: ExpressionTree
-  | Value of value: double
-
-let getOpPrecedence = function
+let getPrecedence = function
   | Exponent -> 5
   | Multiply -> 3
   | Modulus -> 4
@@ -23,7 +10,7 @@ let getOpPrecedence = function
   | Add -> 2
   | Subtract -> 1
 
-let evalOp = function
+let getEvaluator = function
   | Exponent -> (fun x y -> x ** y)
   | Multiply -> (*)
   | Modulus -> (%)
@@ -31,7 +18,7 @@ let evalOp = function
   | Add -> (+)
   | Subtract -> (-)
 
-let getOp str =
+let getOperator str =
   match str with
   | "^" -> Exponent
   | "*" -> Multiply
@@ -41,17 +28,22 @@ let getOp str =
   | "-" -> Subtract
   | other -> failwith <| "Expected operator, found '" + other + "'"
 
+type ExpressionTree =
+  | Expression of
+      left: ExpressionTree *
+      operator: Operator *
+      right: ExpressionTree
+  | Value of value: double
+
 let rec evalExpr = function
   | Value x -> x
-  | Expression (x, op, y) -> (evalOp op) (evalExpr x) (evalExpr y)
+  | Expression (x, op, y) -> (getEvaluator op) (evalExpr x) (evalExpr y)
 
 let rec addExpr op right expr =
   match expr with
   | Value left -> Expression (expr, op, right)
   | Expression (left, op2, right2) ->
-    let prec1 = getOpPrecedence op
-    let prec2 = getOpPrecedence op2
-    if (prec1 <= prec2) then
+    if (getPrecedence op <= getPrecedence op2) then
       Expression(expr, op, right)
     else
       Expression(left, op2, addExpr op right right2)
@@ -61,22 +53,34 @@ let number = @"-?(\.\d+|\d+\.?\d*)"
 let tokenPattern = @"((?<!" + op + ")-" + "|" + number + "|" + op + ")"
 let tokenRegex = Regex(tokenPattern, RegexOptions.Compiled)
 
+let checkSyntax str =
+  tokenRegex.Replace(str, "") |> Seq.filter ((<>)' ') |> Seq.isEmpty
+
 let parseExpr str =
   let tokens = seq { for x in tokenRegex.Matches(str) do yield x.Value }
-  let initialValue = tokens |> Seq.head |> double |> Value
+  let initial = tokens |> Seq.head |> double |> Value
   tokens
   |> Seq.skip 1
   |> Seq.pairwise
   |> Seq.mapi (fun i x -> i % 2 = 0, x)
   |> Seq.filter fst
-  |> Seq.map (fun (i, (opStr, valueStr)) -> getOp opStr, valueStr |> double |> Value)
-  |> Seq.fold (fun exprTree (op, value) -> addExpr op value exprTree) initialValue
-  
+  |> Seq.map (fun (i, (op, value)) -> getOperator op, value |> double |> Value)
+  |> Seq.fold (fun exprTree (op, value) -> addExpr op value exprTree) initial
+
+let (<||>) f g x = f x || g x
+
 [<EntryPoint>]
 let main args =
-  let expr = parseExpr args.[0]
-  if ((args |> Array.length) > 1) && args.[1] = "-v" then
-    printfn "%A" expr
+  try
+    if not <| checkSyntax args.[0] then
+      failwith <| "Could not parse '" + args.[0] + "'"
 
-  printfn "%f" <| evalExpr expr
-  0
+    let expr = parseExpr args.[0]
+    if args |> Seq.exists ((=) "-v" <||> (=) "--verbose") then
+      printfn "%A" expr
+    printfn "%f" <| evalExpr expr
+    0
+  with
+    | ex ->
+      printfn "Error: %s" ex.Message
+      -1
