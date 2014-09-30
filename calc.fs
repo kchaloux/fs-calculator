@@ -11,7 +11,7 @@ let getPrecedence = function
   | Subtract -> 1
 
 let getEvaluator = function
-  | Exponent -> (fun x y -> x ** y)
+  | Exponent -> ( ** )
   | Multiply -> (*)
   | Modulus -> (%)
   | Divide -> (/)
@@ -81,8 +81,7 @@ let parseExpr str =
   |> Seq.map (fun (_, (op, value)) -> getOperator op, value |> double |> Value)
   |> Seq.fold (fun exprTree (op, value) -> addExpr op value exprTree) initial
 
-let showValue n =
-  (sprintf "%0.15f" n).TrimEnd('0').TrimEnd('.')
+let showValue n = System.String.Format("{0:0.###############}", [|n|])
 
 let rec showExpr expr =
   match expr with
