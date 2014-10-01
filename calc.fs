@@ -40,11 +40,8 @@ let getSymbol op =
   | _ -> failwith <| sprintf "Could not find a symbol for operator '%A'" op
 
 type ExpressionTree =
-  | Expression of
-      left: ExpressionTree *
-      operator: Operator *
-      right: ExpressionTree
-  | Value of value: double
+  | Expression of ExpressionTree * Operator * ExpressionTree
+  | Value of double
   | Empty
 
 let showValue n = System.String.Format("{0:0.###############}", [|n|])
@@ -125,7 +122,7 @@ let main args =
     if args |> Seq.exists ((=) "-d" <||> (=) "--debug") then
       printfn "Tokens: %A" <| (tokenize str |> List.ofSeq)
       printfn "Expression: %s" <| showExpr expr
-      
+
     printfn "%s" <| (expr |> evalExpr |> showValue)
     0
   with
