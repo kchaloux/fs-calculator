@@ -47,12 +47,20 @@ type ExpressionTree =
   | Value of value: double
   | Empty
 
-let rec evalExpr = function
-  | Empty -> failwith "Error: Expression is incomplete"
+let showValue n = System.String.Format("{0:0.###############}", [|n|])
+
+let rec showExpr expr =
+  match expr with
+  | Empty -> "_"
+  | Value n -> showValue n
+  | Expression (left, op, right) ->
+    sprintf "(%s%s%s)" (showExpr left) (getSymbol op) (showExpr right)
+
+let rec evalExpr expr =
+  match expr with
   | Value x -> x
   | Expression (x, op, y) -> (getEvaluator op) (evalExpr x) (evalExpr y)
-
-let showValue n = System.String.Format("{0:0.###############}", [|n|])
+  | Empty -> failwith <| sprintf "Error: Expression is incomplete"
 
 let rec addExpr value expr =
   match expr with
@@ -60,7 +68,9 @@ let rec addExpr value expr =
   | Expression (Empty, op, rhs) -> Expression (value, op, rhs)
   | Expression (lhs, op, Empty) -> Expression (lhs, op, value)
   | Expression (lhs, op, rhs) -> Expression (lhs, op, addExpr value rhs)
-  | _ -> failwith <| sprintf "Error: Cannot insert %A into %A" value expr
+  | _ ->
+    sprintf "Error: Cannot evaluate expression: %s %s" (showExpr expr) (showExpr value)
+    |> failwith
 
 let rec addOperator op expr = 
   match expr with
@@ -102,13 +112,6 @@ let parseExpr str =
     | x -> Value (double x)
   parse Empty initial (tokens |> Seq.skip 1 |> List.ofSeq)
 
-let rec showExpr expr =
-  match expr with
-  | Empty -> "_"
-  | Value n -> showValue n
-  | Expression (left, op, right) ->
-    sprintf "(%s%s%s)" (showExpr left) (getSymbol op) (showExpr right)
-
 let (<||>) f g x = f x || g x
 
 [<EntryPoint>]
@@ -122,6 +125,7 @@ let main args =
     if args |> Seq.exists ((=) "-d" <||> (=) "--debug") then
       printfn "Tokens: %A" <| (tokenize str |> List.ofSeq)
       printfn "Expression: %s" <| showExpr expr
+      
     printfn "%s" <| (expr |> evalExpr |> showValue)
     0
   with
