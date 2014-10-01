@@ -46,12 +46,20 @@ type ExpressionTree =
 
 let showValue n = System.String.Format("{0:0.###############}", [|n|])
 
-let rec showExpr expr =
+let showExpr expr f =
   match expr with
   | Empty -> "_"
   | Value n -> showValue n
-  | Expression (left, op, right) ->
-    sprintf "(%s%s%s)" (showExpr left) (getSymbol op) (showExpr right)
+  | Expression (lhs, op, rhs) -> f lhs op rhs
+
+let rec showInfixExpr expr = showExpr expr (fun lhs op rhs ->
+  sprintf "(%s %s %s)" (showInfixExpr lhs) (getSymbol op) (showInfixExpr rhs))
+
+let rec showPostfixExpr expr = showExpr expr (fun lhs op rhs ->
+  sprintf "%s %s %s" (showPostfixExpr lhs) (showPostfixExpr rhs) (getSymbol op))
+
+let rec showPrefixExpr expr = showExpr expr (fun lhs op rhs ->
+  sprintf "%s %s %s" (getSymbol op) (showPrefixExpr lhs) (showPrefixExpr rhs))
 
 let rec evalExpr expr =
   match expr with
@@ -67,10 +75,10 @@ let rec addExpr value expr =
   | Expression (lhs, op, Empty) -> Expression (lhs, op, value)
   | Expression (lhs, op, rhs) -> Expression (lhs, op, addExpr value rhs)
   | _ ->
-    sprintf "Error: Cannot evaluate expression: %s %s" (showExpr expr) (showExpr value)
+    sprintf "Error: Cannot evaluate expression: %s %s" (showInfixExpr expr) (showInfixExpr value)
     |> failwith
 
-let rec addOperator op expr = 
+let rec addOperator op expr =
   match expr with
   | Empty -> Expression (Empty, op, Empty)
   | Value _ -> Expression (expr, op, Empty)
@@ -96,7 +104,7 @@ let checkSyntax str =
 
 let tokenize str = seq { for x in tokenRegex.Matches(str) do yield x.Value }
 
-let parseExpr str = 
+let parseExpr str =
   let rec parse expr current tokens =
     match tokens with
     | ("("::rest) -> parse (addExpr current expr) Empty rest
@@ -104,13 +112,13 @@ let parseExpr str =
     | (token::rest) -> parse expr (addToken token current) rest
     | _ -> current
   let tokens = tokenize str
-  let initial = 
+  let initial =
     match tokens |> Seq.head with
     | "(" -> Empty
     | x -> Value (double x)
   parse Empty initial (tokens |> Seq.skip 1 |> List.ofSeq)
 
-let (<||>) f g x = f x || g x
+let flip f x y = f y x
 
 [<EntryPoint>]
 let main args =
@@ -120,11 +128,22 @@ let main args =
       failwith <| sprintf "Could not parse '%s'" str
 
     let expr = parseExpr str
-    if args |> Seq.exists ((=) "-d" <||> (=) "--debug") then
-      printfn "Tokens: %A" <| (tokenize str |> List.ofSeq)
-      printfn "Expression: %s" <| showExpr expr
-
-    printfn "%s" <| (expr |> evalExpr |> showValue)
+    if args |> Seq.exists ((=) "--print") then
+      let showFunctionNames =
+        [ "--postfix", showPostfixExpr
+          "--infix", showInfixExpr
+          "--prefix", showPrefixExpr
+        ] |> Map.ofList
+      let showFunction =
+        match args |> Seq.tryPick (flip Map.tryFind showFunctionNames) with
+        | Some f -> f
+        | _      -> showInfixExpr
+      printfn "%s" <| showFunction expr
+    else
+      if (args |> Seq.exists ((=) "--debug")) then
+        printfn "Tokens: %A" <| (tokenize str |> List.ofSeq)
+        printfn "Expression: %s" (showInfixExpr expr)
+      printfn "%s" <| (expr |> evalExpr |> showValue)
     0
   with
     | ex ->
