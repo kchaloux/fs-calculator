@@ -62,6 +62,7 @@ let rec evalExpr expr =
 let rec addExpr value expr =
   match expr with
   | Empty -> value
+  | Expression (Empty, op, Empty) -> Expression (Empty, op, value)
   | Expression (Empty, op, rhs) -> Expression (value, op, rhs)
   | Expression (lhs, op, Empty) -> Expression (lhs, op, value)
   | Expression (lhs, op, rhs) -> Expression (lhs, op, addExpr value rhs)
