@@ -1,6 +1,4 @@
 open FsCalculator.Utility
-open FsCalculator.Sign
-open FsCalculator.Operators
 open FsCalculator.Syntax
 open FsCalculator.Expression
 
