@@ -11,9 +11,9 @@ type ExpressionTree =
   | Value of double
 
 let rec show = function
-  | ExpressionTree.Group (sign, expr) -> sprintf "%s%s" (sign |> Sign.show) (expr |> show)
-  | ExpressionTree.Value value -> sprintf "%s" (showValue value)
-  | ExpressionTree.Expression (lhs, op, rhs) ->
+  | Group (sign, expr) -> sprintf "%s%s" (sign |> Sign.show) (expr |> show)
+  | Value value -> sprintf "%s" (showValue value)
+  | Expression (lhs, op, rhs) ->
     sprintf "(%s%s%s)"
       (lhs |> show)
       (getSymbol op)
@@ -34,8 +34,8 @@ let rec parse syntax =
       | (Syntax.Negate :: xs) -> (Negative, xs)
       | xs -> (Positive, xs)
     match rest with
-    | (Syntax.Value value :: xs) -> Some (ExpressionTree.Group (sign, ExpressionTree.Value value), xs)
-    | (Syntax.Group _ as group :: xs) -> Some (ExpressionTree.Group (sign, parse group), xs)
+    | (Syntax.Value value :: xs) -> Some (Group (sign, Value value), xs)
+    | (Syntax.Group _ as group :: xs) -> Some (Group (sign, parse group), xs)
     | _ -> None
   let rec parse expr remaining =
     match remaining with
@@ -48,7 +48,7 @@ let rec parse syntax =
     | _ -> expr
 
   match syntax with
-  | Syntax.Value value -> ExpressionTree.Value value
+  | Syntax.Value value -> Value value
   | Syntax.Group elems ->
     match elems with
     | SignedGroup (lhs, rest) -> parse lhs rest
@@ -57,8 +57,8 @@ let rec parse syntax =
   | other -> failwith <| sprintf "Expecting a value or expression, found '%s'" (other |> Syntax.show)
 
 let rec evaluate = function
-  | ExpressionTree.Value n -> n
-  | ExpressionTree.Group (Negative, expr) -> -(evaluate expr)
-  | ExpressionTree.Group (Positive, expr) -> evaluate expr
-  | ExpressionTree.Expression (lhs, op, rhs) ->
+  | Value n -> n
+  | Group (Negative, expr) -> -(evaluate expr)
+  | Group (Positive, expr) -> evaluate expr
+  | Expression (lhs, op, rhs) ->
     (getEvaluator op) (evaluate lhs) (evaluate rhs)
