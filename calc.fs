@@ -1,151 +1,205 @@
 open System.Text.RegularExpressions
 
-type Operator = | Exponent | Multiply | Modulus | Divide | Add | Subtract
+let flip f x y = f y x
+
+type Operator = Exponent | Multiply | Modulus | Divide | Add | Subtract
+
+type Sign = Positive | Negative
+
+type ExpressionTree =
+  | Group of Sign * ExpressionTree
+  | Expression of ExpressionTree * Operator * ExpressionTree
+  | Value of double
+
+type Syntax =
+  | Negate
+  | Value of double
+  | Function of Operator
+  | Group of Syntax list
+  | GroupOpen
+  | GroupClose
+
+let operatorSymbols =
+  [ Exponent, "^"
+    Multiply, "*"
+    Modulus, "%"
+    Divide, "/"
+    Add, "+"
+    Subtract, "-" ]
+
+let getOperator symbol =
+  match operatorSymbols |> Seq.tryFind (fun (_, str) -> str = symbol) with
+  | Some (operator, _) -> operator
+  | _ -> failwith <| sprintf "Could not find a matching operator for the symbol '%s'" symbol
+
+let getSymbol operator =
+  match operatorSymbols |> Seq.tryFind (fun (op, _) -> op = operator) with
+  | Some (_, symbol) -> symbol
+  | _ -> failwith <| sprintf "Could not find a matching symbol for the operator '%A'" operator
 
 let getPrecedence = function
   | Exponent -> 3
   | Multiply -> 2
   | Modulus -> 2
-  | Divide -> 2
+  | Divide ->  2
   | Add -> 1
   | Subtract -> 1
 
 let getEvaluator = function
   | Exponent -> ( ** )
-  | Multiply -> (*)
-  | Modulus -> (%)
-  | Divide -> (/)
-  | Add -> (+)
-  | Subtract -> (-)
+  | Multiply -> ( * )
+  | Modulus -> ( % )
+  | Divide -> ( / )
+  | Add -> ( + )
+  | Subtract -> ( - )
 
-let operatorSymbols =
-  [ "^", Exponent
-    "*", Multiply
-    "%", Modulus
-    "/", Divide
-    "+", Add
-    "-", Subtract ]
+let operatorPattern =
+  sprintf @"[%s]"
+    (operatorSymbols
+    |> List.map (fun (_, symbol) -> "\\" + symbol)
+    |> List.reduce (+))
+printfn "operatorPattern: %s" operatorPattern
+let decimalPattern = @"(\.\d+|\d+\.?\d*)"
+let scientificPattern = sprintf @"%s[eE]-?\d+" decimalPattern
+let negativePattern = sprintf @"-(?=%s|\()" decimalPattern
+let tokenPattern =
+  sprintf @"(%s|%s|%s|%s|\(|\))" negativePattern scientificPattern decimalPattern operatorPattern
+let tokenRegex = Regex(tokenPattern, RegexOptions.Compiled)
 
-let symbolToOperator = operatorSymbols |> Map.ofList
-let operatorToSymbol = operatorSymbols |> List.map (fun (x, y) -> (y, x)) |> Map.ofList
-
-let getOperator str =
-  match symbolToOperator |> Map.tryFind str with
-  | Some op -> op
-  | _ -> failwith <| sprintf "Expected operator, found '%s'" str
-
-let getSymbol op =
-  match operatorToSymbol |> Map.tryFind op with
-  | Some symbol -> symbol
-  | _ -> failwith <| sprintf "Could not find a symbol for operator '%A'" op
-
-type ExpressionTree =
-  | Expression of ExpressionTree * Operator * ExpressionTree
-  | Value of double
-  | Empty
+let showSign = function
+  | Sign.Positive -> ""
+  | Sign.Negative -> "-"
 
 let showValue n = System.String.Format("{0:0.###############}", [|n|])
 
-let showExpr expr f =
-  match expr with
-  | Empty -> "_"
-  | Value n -> showValue n
-  | Expression (lhs, op, rhs) -> f lhs op rhs
+let tokenize str = seq { for x in tokenRegex.Matches(str) do yield x.Value } |> List.ofSeq
 
-let rec showInfixExpr expr = showExpr expr (fun lhs op rhs ->
-  sprintf "(%s %s %s)" (showInfixExpr lhs) (getSymbol op) (showInfixExpr rhs))
+let rec showSyntax = function
+  | Syntax.Value n -> showValue n
+  | Syntax.Negate -> "-"
+  | Syntax.GroupOpen -> "("
+  | Syntax.GroupClose -> ")"
+  | Syntax.Function op -> getSymbol op
+  | Syntax.Group elems -> elems |> List.map (showSyntax) |> List.fold (+) "" |> sprintf "(%s)"
 
-let rec showPostfixExpr expr = showExpr expr (fun lhs op rhs ->
-  sprintf "%s %s %s" (showPostfixExpr lhs) (showPostfixExpr rhs) (getSymbol op))
+let rec showExpression = function
+  | ExpressionTree.Group (sign, expr) -> sprintf "%s%s" (showSign sign) (showExpression expr)
+  | ExpressionTree.Value value -> sprintf "%s" (showValue value)
+  | ExpressionTree.Expression (lhs, op, rhs) ->
+    sprintf "(%s%s%s)"
+      (showExpression lhs)
+      (getSymbol op)
+      (showExpression rhs)
 
-let rec showPrefixExpr expr = showExpr expr (fun lhs op rhs ->
-  sprintf "%s %s %s" (getSymbol op) (showPrefixExpr lhs) (showPrefixExpr rhs))
+let (>~) (elem: Syntax) (group: Syntax) =
+  match group with
+  | Syntax.Group elems -> Syntax.Group (elem :: elems)
+  | _ -> failwith <| sprintf "Cannot add element to group '%A'" group
 
-let rec evalExpr expr =
-  match expr with
-  | Value x -> x
-  | Expression (x, op, y) -> (getEvaluator op) (evalExpr x) (evalExpr y)
-  | Empty -> failwith <| sprintf "Error: Expression is incomplete"
+let checkSyntax token previous =
+  match token with
+  | "-" ->
+    match previous with
+    | Some (Syntax.Value _ | Syntax.Group _) -> Syntax.Function Subtract
+    | Some (Syntax.Function _) | None -> Syntax.Negate
+    | Some other -> failwith <| sprintf "Unexpected '-' after '%s'" (showSyntax other)
+  | "(" ->
+    match previous with
+    | Some (Syntax.Function _ | Syntax.Negate) | None -> Syntax.GroupOpen
+    | Some other -> failwith <| sprintf "Cannot begin a group after '%s'" (showSyntax other)
+  | ")" ->
+    match previous with
+    | Some (Syntax.Value _ | Syntax.Group _) -> Syntax.GroupClose
+    | None -> failwith <| "Mismatched parentheses - expected '('"
+    | Some other -> failwith <| sprintf "Cannot close a group after '%s'" (showSyntax other)
+  | other ->
+    match operatorSymbols |> Seq.tryFind (fun (_, symbol) -> symbol = other) with
+    | Some (operator, _) ->
+      match previous with
+      | Some (Syntax.Value _ | Syntax.Group _) -> Syntax.Function operator
+      | _ -> failwith <| sprintf "Cannot parse expression at '%s'" other
+    | _ -> Syntax.Value (double other)
 
-let rec addExpr value expr =
-  match expr with
-  | Empty -> value
-  | Expression (Empty, op, Empty) -> Expression (Empty, op, value)
-  | Expression (Empty, op, rhs) -> Expression (value, op, rhs)
-  | Expression (lhs, op, Empty) -> Expression (lhs, op, value)
-  | Expression (lhs, op, rhs) -> Expression (lhs, op, addExpr value rhs)
-  | _ ->
-    sprintf "Error: Cannot evaluate expression: %s %s" (showInfixExpr expr) (showInfixExpr value)
-    |> failwith
-
-let rec addOperator op expr =
-  match expr with
-  | Empty -> Expression (Empty, op, Empty)
-  | Value _ -> Expression (expr, op, Empty)
-  | Expression (lhs, op2, rhs) ->
-    if (getPrecedence op <= getPrecedence op2) then
-      Expression (expr, op, Empty)
-    else
-      Expression (lhs, op2, addOperator op rhs)
-
-let addToken token expr =
-  match symbolToOperator |> Map.tryFind token with
-  | Some op -> addOperator op expr
-  | None -> addExpr (Value (double token)) expr
-
-let op = @"[\/\+\-\*\^%]"
-let decimal = @"-?(\.\d+|\d+\.?\d*)"
-let scientific = sprintf @"%s[eE]-?\d+" decimal
-let tokenPattern = sprintf @"((?<!%s)-|%s|%s|%s|\(|\))" op scientific decimal op
-let tokenRegex = Regex(tokenPattern, RegexOptions.Compiled)
-
-let checkSyntax str =
-  tokenRegex.Replace(str, "") |> Seq.filter ((<>)' ') |> Seq.isEmpty
-
-let tokenize str = seq { for x in tokenRegex.Matches(str) do yield x.Value }
-
-let parseExpr str =
-  let rec parse expr current tokens =
-    match tokens with
-    | ("("::rest) -> parse (addExpr current expr) Empty rest
-    | (")"::rest) -> parse Empty (addExpr current expr) rest
-    | (token::rest) -> parse expr (addToken token current) rest
-    | _ -> current
+let lexSyntax str =
+  let rec lex groups top previous remaining =
+    match remaining with
+    | (token :: rest) ->
+      let syntax = checkSyntax token previous
+      match syntax with
+      | Syntax.GroupOpen -> lex (top :: groups) (Syntax.Group []) None rest
+      | Syntax.GroupClose ->
+        match groups with
+        | (groupHead :: groupTail) -> lex groupTail (top >~ groupHead) (Some top) rest
+        | [] -> failwith "Mismatched parentheses - expected '('"
+      | _ -> lex groups (syntax >~ top) (Some syntax) rest
+    | _ -> top :: groups
+  if tokenRegex.Replace(str, "").Trim() <> "" then
+    failwith <| sprintf "Unexpected tokens in input - %s" str
   let tokens = tokenize str
-  let initial =
-    match tokens |> Seq.head with
-    | "(" -> Empty
-    | x -> Value (double x)
-  parse Empty initial (tokens |> Seq.skip 1 |> List.ofSeq)
+  let groups = lex [] (Syntax.Group []) None tokens
+  if groups |> Seq.length = 1 then
+    let rec reverseTree = function
+    | Syntax.Group elems -> Syntax.Group (elems |> List.rev |> List.map reverseTree)
+    | other -> other
+    reverseTree groups.[0]
+  else
+    failwith "Mismatched parentheses - expected ')'"
 
-let flip f x y = f y x
+let rec buildExpression op rhs = function
+  | Expression (lhs2, op2, rhs2) as lhs ->
+    if getPrecedence op <= getPrecedence op2 then
+      Expression (lhs, op, rhs)
+    else
+      Expression (lhs2, op2, rhs2 |> buildExpression op rhs)
+  | lhs -> Expression (lhs, op, rhs)
+
+let rec parseExpression syntax =
+  let (|SignedGroup|_|) elems =
+    let (sign, rest) =
+      match elems with
+      | (Syntax.Negate :: xs) -> (Negative, xs)
+      | xs -> (Positive, xs)
+    match rest with
+    | (Syntax.Value value :: xs) -> Some (ExpressionTree.Group (sign, ExpressionTree.Value value), xs)
+    | (Syntax.Group _ as group :: xs) -> Some (ExpressionTree.Group (sign, parseExpression group), xs)
+    | _ -> None
+
+  let rec parse expr remaining =
+    match remaining with
+    | (Syntax.Function op :: rest) ->
+      match rest with
+      | SignedGroup (rhs, rest2) -> parse (expr |> buildExpression op rhs) rest2
+      | (other :: _) -> failwith <| sprintf "Expecting a value or expression, found '%s'" (showSyntax other)
+      | _ -> failwith <| sprintf "Unexpected end of expression: '%s'" (showExpression expr)
+    | (other :: _) -> failwith <| sprintf "Expecting a function, found '%s'" (showSyntax other)
+    | _ -> expr
+
+  match syntax with
+  | Syntax.Value value -> ExpressionTree.Value value
+  | Syntax.Group elems ->
+    match elems with
+    | SignedGroup (lhs, rest) -> parse lhs rest
+    | (other :: _) -> failwith <| sprintf "Expecting a value or expression, found '%s'" (showSyntax other)
+    | _ -> failwith "Expression cannot be empty"
+  | other -> failwith <| sprintf "Expecting a value or expression, found '%s'" (showSyntax other)
+
+let rec evaluateExpression = function
+  | ExpressionTree.Value n -> n
+  | ExpressionTree.Group (Negative, expr) -> -(evaluateExpression expr)
+  | ExpressionTree.Group (Positive, expr) -> evaluateExpression expr
+  | ExpressionTree.Expression (lhs, op, rhs) ->
+    (getEvaluator op) (evaluateExpression lhs) (evaluateExpression rhs)
 
 [<EntryPoint>]
 let main args =
   try
-    let str = args.[0]
-    if not <| checkSyntax str then
-      failwith <| sprintf "Could not parse '%s'" str
-
-    let expr = parseExpr str
-    if args |> Seq.exists ((=) "--print") then
-      let showFunctionNames =
-        [ "--postfix", showPostfixExpr
-          "--infix", showInfixExpr
-          "--prefix", showPrefixExpr
-        ] |> Map.ofList
-      let showFunction =
-        match args |> Seq.tryPick (flip Map.tryFind showFunctionNames) with
-        | Some f -> f
-        | _      -> showInfixExpr
-      printfn "%s" <| showFunction expr
-    else
-      if (args |> Seq.exists ((=) "--debug")) then
-        printfn "Tokens: %A" <| (tokenize str |> List.ofSeq)
-        printfn "Expression: %s" (showInfixExpr expr)
-      printfn "%s" <| (expr |> evalExpr |> showValue)
+    let syntax = lexSyntax args.[0]
+    let expression = parseExpression syntax
+    printfn "Expression: %s" (showExpression expression)
+    let result = evaluateExpression expression
+    printfn "Result: %s" (showValue result)
     0
   with
-    | ex ->
+    ex ->
       printfn "Error: %s" ex.Message
       -1
