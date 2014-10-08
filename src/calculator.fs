@@ -58,7 +58,6 @@ let operatorPattern =
     (operatorSymbols
     |> List.map (fun (_, symbol) -> "\\" + symbol)
     |> List.reduce (+))
-printfn "operatorPattern: %s" operatorPattern
 let decimalPattern = @"(\.\d+|\d+\.?\d*)"
 let scientificPattern = sprintf @"%s[eE]-?\d+" decimalPattern
 let negativePattern = sprintf @"-(?=%s|\()" decimalPattern
@@ -195,9 +194,13 @@ let main args =
   try
     let syntax = lexSyntax args.[0]
     let expression = parseExpression syntax
-    printfn "Expression: %s" (showExpression expression)
+    if args |> Seq.exists ((=) "--debug") then
+      printfn "Syntax: %s" (showSyntax syntax)
+      printfn "    %A" syntax
+      printfn "Expression: %s" (showExpression expression)
+      printfn "    %A" expression
     let result = evaluateExpression expression
-    printfn "Result: %s" (showValue result)
+    printfn "%s" (showValue result)
     0
   with
     ex ->
