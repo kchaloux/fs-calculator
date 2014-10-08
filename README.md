@@ -1,4 +1,4 @@
 fs-calculator
 =============
 
-An simple infix CLI calculator written in F#
+A simple infix CLI calculator written in F#.
