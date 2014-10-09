@@ -1,7 +1,8 @@
-module FsCalculator.Sign
+namespace Calculator
 
-type Sign = Positive | Negative
+type ExpressionSign = Positive | Negative
 
-let show = function
-  | Sign.Positive -> ""
-  | Sign.Negative -> "-"
+module Sign =
+  let show = function
+    | Positive -> ""
+    | Negative -> "-"
