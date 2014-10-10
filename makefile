@@ -6,6 +6,7 @@ FILES = \
 	src/operator.fs \
 	src/expression.fs \
 	src/infix.fs \
+	src/rpn.fs \
 	src/main.fs
 
 fscalc:
