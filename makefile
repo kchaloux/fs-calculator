@@ -4,6 +4,7 @@ FILES = \
 	src/utility.fs \
 	src/sign.fs \
 	src/operator.fs \
+	src/tokenizer.fs \
 	src/expression.fs \
 	src/infix.fs \
 	src/rpn.fs \
