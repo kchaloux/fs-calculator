@@ -12,6 +12,11 @@ module Parser =
   let private tokenPattern =
     sprintf @"(%s|%s|%s)" scientificPattern decimalPattern operatorPattern
 
+  let rec show = function
+    | Group (sign, expr) -> sprintf "%s%s" (sign |> Sign.show) (expr |> show)
+    | Value (value) -> sprintf "%s" (showValue value)
+    | Expression (lhs, op, rhs) -> sprintf "%s %s %s" (lhs |> show) (rhs |> show) (op |> Operator.show)
+
   let parse str =
     let rec buildExpression tokens =
       match tokens with

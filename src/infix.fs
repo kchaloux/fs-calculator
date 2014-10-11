@@ -3,7 +3,7 @@ open Calculator
 
 module Parser =
   open Calculator.Utility
-  open Calculator.Tokenizer
+  open Calculator.Tokenizer 
 
   let private operatorPattern =
     sprintf @"[%s]" (Operator.symbols |> List.map ((+) "\\") |> List.reduce (+))
@@ -12,6 +12,8 @@ module Parser =
   let private negativePattern = sprintf @"-(?=%s|\()" decimalPattern
   let private tokenPattern =
     sprintf @"(%s|%s|%s|%s|\(|\))" negativePattern scientificPattern decimalPattern operatorPattern
+
+  let show = Expression.show
 
   let rec private buildExpression op rhs lhs =
     match rhs with
@@ -31,11 +33,11 @@ module Parser =
       match rest with
       | ("(" :: xs) ->
           let (expr, rest2, nl2) = parseTokens xs (nestLevel + 1)
-          (ExpressionTree.Group (sign, expr), rest2, nl2)
+          (Group (sign, expr), rest2, nl2)
       | (other :: xs) ->
         match other |> Operator.tryGetOperator with
         | Some op -> failwith <| sprintf "Expecting a value or group, found '%s'" (op |> Operator.show)
-        | None -> (ExpressionTree.Group (sign, ExpressionTree.Value (double other)), xs, nestLevel)
+        | None -> (Group (sign, Value (double other)), xs, nestLevel)
       | _ -> failwith "Unexpected end of expression"
 
     and parseTokens tokens (nestLevel: int) =
