@@ -1,42 +1,48 @@
 namespace Calculator
 
-type ConsoleArgument =
+type ConsoleFlags =
   | Flag of string
-  | Option of string * string
+  | ParamFlag of string * string
 
-module Argument =
+type ArgumentsCollection = {
+  rawInputs : string list
+  flagsMap : Map<string, ConsoleFlags>
+}
+
+module Arguments =
   open System.Text.RegularExpressions
 
   let private pattern = @"--(?<flag>\w+)(:(?<param>.*))?"
   let private regex = Regex(pattern, RegexOptions.Compiled)
 
-  let toFlag = function
-    | Flag flag -> flag
-    | Option (flag, _) -> flag
-
   let parse commandLineArgs =
-    let matchArgument arg =
-      let matchArg = regex.Match(arg)
-      if matchArg <> null then
-        let flag = matchArg.Groups.["flag"].Value.ToLower()
-        let param = matchArg.Groups.["param"].Value
-        if param <> "" then
-          Some (Option (flag, param))
+    let rec matchArguments inputs args arguments =
+      match arguments with
+      | (next :: rest) ->
+        let matchArg = regex.Match(next)
+        if matchArg <> null && matchArg.Success then
+          let flag = matchArg.Groups.["flag"].Value.ToLower()
+          let param = matchArg.Groups.["param"].Value
+          if param <> "" then
+            matchArguments inputs ((flag, ParamFlag (flag, param)) :: args) rest
+          else
+            matchArguments inputs ((flag, Flag (flag)) :: args) rest
         else
-          Some (Flag flag)
-      else
-        None
+          matchArguments (next :: inputs) args rest
+      | _ -> (inputs, args)
 
-    commandLineArgs
-    |> Seq.choose matchArgument
-    |> Seq.map (fun x -> (toFlag x, x))
-    |> Map.ofSeq
+    let (rawInputs, parsedArgs) = matchArguments [] [] (commandLineArgs |> List.ofArray)
+    let argumentsCollection = {
+      rawInputs = rawInputs |> List.rev
+      flagsMap = parsedArgs |> Map.ofList
+    }
+    argumentsCollection
 
-  let exists flag parsedArgs = parsedArgs |> Map.containsKey flag
+  let hasFlag flag parsedArgs = parsedArgs.flagsMap |> Map.containsKey flag
 
-  let tryFind flag parsedArgs = parsedArgs |> Map.tryFind flag
+  let tryFindFlag flag parsedArgs = parsedArgs.flagsMap |> Map.tryFind flag
 
   let tryFindParameter flag parsedArgs =
-    match parsedArgs |> tryFind flag with
-    | Some (Option (_, param)) -> Some param
+    match parsedArgs |> tryFindFlag flag with
+    | Some (ParamFlag (_, param)) -> Some param
     | _ -> None

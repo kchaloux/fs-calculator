@@ -4,11 +4,15 @@ open Utility
 [<EntryPoint>]
 let main args =
   try
-    let input = args.[0]
-    let commandArgs = args |> Seq.skip 1 |> Argument.parse
+    printfn "arguments: %A" args
+    let parsedArgs = args |> Arguments.parse
+    let input =
+      match parsedArgs.rawInputs |> Seq.tryPick Some with
+      | Some x -> x
+      | None _ -> failwith "Could not find an expression to calculate"
 
     let (parseExpression, showExpression) =
-      match commandArgs |> Argument.tryFindParameter "read" with
+      match parsedArgs |> Arguments.tryFindParameter "read" with
       | Some param ->
         match param.ToLower() with
         | "rpn" -> (Rpn.Parser.parse, Rpn.Parser.show)
@@ -18,15 +22,15 @@ let main args =
 
     let expression = input |> parseExpression
 
-    if commandArgs |> Argument.exists "debug" then
+    if parsedArgs |> Arguments.hasFlag "debug" then
       printfn "Expression: %s" (expression |> Expression.show)
       printfn "    %A" expression
 
     let output =
-      match commandArgs |> Argument.tryFind "print" with
+      match parsedArgs |> Arguments.tryFindFlag "print" with
       | Some argument ->
           match argument with
-          | Option (_, param) ->
+          | ParamFlag (_, param) ->
             match param.ToLower() with
             | "rpn" -> expression |> Rpn.Parser.show
             | "infix" -> expression |> Infix.Parser.show
